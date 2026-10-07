@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 私下报告安全漏洞
+    url: https://github.com/jsms2/QBotrix/security/advisories/new
+    about: 请勿在公开 Issue 中披露安全漏洞或真实凭据。

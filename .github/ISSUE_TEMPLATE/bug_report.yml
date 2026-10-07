@@ -1,0 +1,28 @@
+name: Bug 报告
+description: 报告可复现的问题（安全漏洞请私下报告）
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: QBotrix 版本、Node.js 版本、操作系统和数据库类型。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 提供最小复现步骤及必要的脱敏配置，不要包含密钥或个人数据。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期与实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏日志
+      render: text
