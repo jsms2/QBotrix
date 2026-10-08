@@ -261,6 +261,9 @@ class PluginManager {
       if (!entry) throw error
       moduleId = require.resolve(path.resolve(absolutePath, entry))
     }
+    // Use the same canonical path as dependency state/cache boundaries. Windows
+    // temporary paths may use 8.3 aliases while realpath returns long names.
+    moduleId = fs.realpathSync(moduleId)
     const cacheOptions = { pluginRoot: metadata.directory, includeDependencies: metadata.refreshCache }
     clearPluginCache(moduleId, cacheOptions)
     const isEsm = path.extname(moduleId) === '.mjs'

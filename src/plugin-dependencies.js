@@ -177,14 +177,14 @@ class PluginDependencyManager {
   async ensure(pluginPath) {
     let directory = path.resolve(pluginPath)
     try {
+      directory = await fs.realpath(directory)
       const stat = await fs.stat(directory)
       if (!stat.isDirectory()) directory = path.dirname(directory)
-      directory = await fs.realpath(directory)
     } catch (error) {
       throw new PluginDependencyError(path.basename(directory), directory, '检查插件目录', error.code || '目录不可用')
     }
     // A loose file in the framework root must never install framework dependencies.
-    if (directory === this.baseDir) return { directory }
+    if (this.baseDir && directory === await fs.realpath(this.baseDir)) return { directory }
     const key = process.platform === 'win32' ? directory.toLowerCase() : directory
     if (pendingChecks.has(key)) return pendingChecks.get(key)
     const task = this.#ensure(directory)

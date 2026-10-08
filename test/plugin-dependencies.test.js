@@ -18,7 +18,7 @@ const logger = { info() {}, warn() {}, error() {}, debug() {}, child() { return 
 async function temporaryRoot(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'qbotrix-deps-'))
   t.after(() => fs.rm(root, { recursive: true, force: true }))
-  return root
+  return fs.realpath(root)
 }
 
 async function json(file, value) {
@@ -204,6 +204,8 @@ test('同插件多个管理器和入口别名共享单个安装，不同插件�
   const root = await temporaryRoot(t)
   const one = await fixture(root, 'one')
   const two = await fixture(root, 'two')
+  const alias = path.join(root, 'one-alias')
+  await fs.symlink(one, alias, process.platform === 'win32' ? 'junction' : 'dir')
   let active = 0
   let maximum = 0
   const calls = []
@@ -218,6 +220,7 @@ test('同插件多个管理器和入口别名共享单个安装，不同插件�
   const options = {logger, runNpm: runner}
   await Promise.all([
     new PluginDependencyManager(options).ensure(one),
+    new PluginDependencyManager(options).ensure(alias),
     new PluginDependencyManager(options).ensure(path.join(one, 'index.js')),
     new PluginDependencyManager(options).ensure(one),
     new PluginDependencyManager(options).ensure(two),
@@ -252,7 +255,8 @@ test('CommonJS 插件依赖版本更新后重载实际使用自己的新模块�
   const manager = new PluginManager({bot, logger, baseDir: root,
     dependencyManager: new PluginDependencyManager({logger, runNpm: fakeNpm()}), synchronizer: {async synchronize() {}}})
   t.after(() => manager.close())
-  await Promise.all([manager.load('one'), manager.load('two')])
+  await fs.symlink(path.join(root, 'one'), path.join(root, 'one-alias'), process.platform === 'win32' ? 'junction' : 'dir')
+  await Promise.all([manager.load('one-alias'), manager.load('two')])
   assert.deepEqual(bot.versions.map(dep => dep.version), ['1.0.0', '2.0.0'])
   assert.ok(bot.versions.every((dep, index) => dep.location.startsWith(path.join(root, index ? 'two' : 'one', 'node_modules'))))
   const directory = path.join(root, 'one')
