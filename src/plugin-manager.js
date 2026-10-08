@@ -5,10 +5,13 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { pathToFileURL } = require('node:url')
+const { PluginDependencyManager, PluginDependencyError } = require('./plugin-dependencies')
 const { createReply } = require('./command-router')
 const { normalizeCommandPanelOptions } = require('./command-panel-selection')
 
 const VALID_SCOPES = new Set(['c2c', 'group'])
+let importGeneration = 0
 
 function normalizeCommandName(name) {
   return String(name).toLowerCase()
@@ -58,17 +61,23 @@ function resolvePluginExport(exported) {
   return candidate
 }
 
-function clearPluginCache(moduleId) {
+function clearPluginCache(moduleId, { pluginRoot = path.dirname(moduleId), includeDependencies = false } = {}) {
+  if (includeDependencies) {
+    for (const id of Object.keys(require.cache)) {
+      const relative = path.relative(pluginRoot, id)
+      if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) delete require.cache[id]
+    }
+  }
   const entry = require.cache[moduleId]
   if (!entry) return
-  const pluginRoot = path.dirname(moduleId)
   const visited = new Set()
 
   function visit(module) {
     if (!module || visited.has(module.id)) return
     visited.add(module.id)
     for (const child of module.children || []) {
-      if (child.filename.startsWith(pluginRoot) && !child.filename.includes(`${path.sep}node_modules${path.sep}`)) {
+      const relative = path.relative(pluginRoot, child.filename)
+      if (!relative.startsWith('..') && !path.isAbsolute(relative) && !child.filename.includes(`${path.sep}node_modules${path.sep}`)) {
         visit(child)
       }
     }
@@ -78,7 +87,7 @@ function clearPluginCache(moduleId) {
 }
 
 class PluginManager {
-  constructor({ bot, synchronizer, logger, baseDir = process.cwd(), uploadTemporaryImage, mysql, auditLog, webBasePath = '/plugins' }) {
+  constructor({ bot, synchronizer, logger, baseDir = process.cwd(), uploadTemporaryImage, mysql, auditLog, webBasePath = '/plugins', autoInstallDependencies = true, dependencyManager }) {
     this.bot = bot
     this.synchronizer = synchronizer
     this.logger = logger
@@ -89,6 +98,11 @@ class PluginManager {
     this.webBasePath = String(webBasePath).replace(/\/$/u, '')
     this.plugins = new Map()
     this.operationQueue = Promise.resolve()
+    this.dependencies = dependencyManager || new PluginDependencyManager({ logger, baseDir: this.baseDir, autoInstallDependencies })
+  }
+
+  configure({ autoInstallDependencies = true } = {}) {
+    this.dependencies.autoInstallDependencies = autoInstallDependencies
   }
 
   load(pluginPath) {
@@ -103,7 +117,7 @@ class PluginManager {
     return this.#enqueue(async () => {
       const record = this.plugins.get(pluginName)
       if (!record) throw new Error(`插件未加载: ${pluginName}`)
-      const pluginPath = record.path
+      const pluginPath = record.loadPath
       await this.#unload(pluginName, true)
       return this.#load(pluginPath)
     })
@@ -115,18 +129,27 @@ class PluginManager {
       if (!fs.existsSync(absoluteDirectory)) return []
       const entries = fs.readdirSync(absoluteDirectory, { withFileTypes: true })
         .filter(entry => !entry.name.startsWith('.') && !entry.name.startsWith('_'))
-        .filter(entry => entry.isDirectory() || /\.(?:c?js)$/iu.test(entry.name))
+        .filter(entry => entry.name !== 'node_modules')
+        .filter(entry => entry.isDirectory() || /\.(?:[cm]?js)$/iu.test(entry.name))
         .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'))
 
       const loaded = []
       const failures = []
-      for (const entry of entries) {
+      // Start independent checks/installations together, then preserve setup order.
+      const preparations = entries.map(entry => {
+        const candidate = path.join(absoluteDirectory, entry.name)
+        return this.dependencies.ensure(candidate).then(value => ({ value }), error => ({ error }))
+      })
+      for (const [index, entry] of entries.entries()) {
         const candidate = path.join(absoluteDirectory, entry.name)
         try {
-          loaded.push(await this.#load(candidate, false))
+          const prepared = await preparations[index]
+          if (prepared.error) throw prepared.error
+          loaded.push(await this.#load(candidate, false, prepared.value))
         } catch (error) {
-          failures.push(error)
+          if (!(error instanceof PluginDependencyError)) failures.push(error)
           this.logger.error(`加载插件 ${candidate} 失败`, error)
+          if (error instanceof PluginDependencyError) this.logger.warn(`已跳过插件 ${entry.name}，其他插件将继续加载`)
         }
       }
       if (failures.length) throw new AggregateError(failures, `${failures.length} 个插件加载失败`)
@@ -223,11 +246,29 @@ class PluginManager {
     return run
   }
 
-  async #load(pluginPath, synchronize = true) {
+  async #load(pluginPath, synchronize = true, prepared) {
     const absolutePath = path.isAbsolute(pluginPath) ? pluginPath : path.resolve(this.baseDir, pluginPath)
-    const moduleId = require.resolve(absolutePath)
-    clearPluginCache(moduleId)
-    const plugin = resolvePluginExport(require(moduleId))
+    const metadata = prepared || await this.dependencies.ensure(absolutePath)
+    let moduleId
+    try {
+      moduleId = require.resolve(fs.statSync(absolutePath).isDirectory() && metadata.manifest?.main
+        ? path.resolve(absolutePath, metadata.manifest.main) : absolutePath)
+    }
+    catch (error) {
+      if (!fs.statSync(absolutePath).isDirectory()) throw error
+      const entry = metadata.manifest?.main || ['index.js', 'index.cjs', 'index.mjs']
+        .find(file => fs.existsSync(path.join(absolutePath, file)))
+      if (!entry) throw error
+      moduleId = require.resolve(path.resolve(absolutePath, entry))
+    }
+    const cacheOptions = { pluginRoot: metadata.directory, includeDependencies: metadata.refreshCache }
+    clearPluginCache(moduleId, cacheOptions)
+    const isEsm = path.extname(moduleId) === '.mjs'
+      || (path.extname(moduleId) === '.js' && metadata.manifest?.type === 'module')
+    const exported = isEsm
+      ? await import(`${pathToFileURL(moduleId).href}?qbotrix=${process.pid}-${++importGeneration}`)
+      : require(moduleId)
+    const plugin = resolvePluginExport(exported)
     const pluginName = String(plugin.name || path.basename(moduleId, path.extname(moduleId))).trim()
     if (!pluginName) throw new TypeError(`插件 ${moduleId} 没有有效名称`)
     if (this.plugins.has(pluginName)) throw new Error(`插件名称重复: ${pluginName}`)
@@ -292,6 +333,8 @@ class PluginManager {
       const record = {
         name: pluginName,
         path: moduleId,
+        loadPath: absolutePath,
+        pluginRoot: metadata.directory,
         plugin,
         setupCleanup,
         commands: staged.commands,
@@ -326,7 +369,7 @@ class PluginManager {
     if (synchronize) await this.synchronizer.synchronize(this.listCommands(pluginName))
     this.plugins.delete(pluginName)
     await this.#dispose(record)
-    clearPluginCache(record.path)
+    clearPluginCache(record.path, { pluginRoot: record.pluginRoot })
     this.logger.info(`插件已卸载: ${pluginName}`)
   }
 

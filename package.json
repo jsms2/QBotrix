@@ -1,6 +1,6 @@
 {
   "name": "qbotrix",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "QBotrix - 面向 QQ 官方机器人单聊与群聊的 Node.js 插件框架",
   "license": "GPL-3.0-only",
@@ -21,7 +21,8 @@
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test",
-    "check": "node scripts/check.js"
+    "check": "node scripts/check.js",
+    "smoke": "node scripts/smoke.js"
   },
   "dependencies": {
     "mysql2": "^3.24.2",

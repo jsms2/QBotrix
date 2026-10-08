@@ -1,4 +1,6 @@
 node_modules/
+.qbotrix-dependencies.json
+.qbotrix-dependencies.json.*.tmp
 .env
 .env.*
 !.env.example

@@ -59,6 +59,13 @@ test('Web 管理页鉴权并代理插件子配置页面和重载操作', async t
   })
   assert.equal(reload.status, 303)
   assert.deepEqual(calls, [['reload', 'demo']])
+
+  const dashboard = await fetch(`${origin}/`, {headers:{Cookie:cookie}})
+  assert.match(await dashboard.text(), /name="autoInstallDependencies"/u)
+  const saved = await fetch(`${origin}/config`, {method:'POST', redirect:'manual', headers:{Cookie:cookie},
+    body:new URLSearchParams({pluginDirectory:'plugins', logLevel:'info', webHost:'127.0.0.1', webPort:'3000', autoInstallDependencies:'false'})})
+  assert.equal(saved.status, 303)
+  assert.deepEqual(calls.at(-1)[1].plugins, {autoInstallDependencies:false})
 })
 
 test('Web 管理端口被占用时保留原始错误且可以安全清理', async t => {

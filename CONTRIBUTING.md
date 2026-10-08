@@ -12,9 +12,14 @@ cd QBotrix
 npm ci
 npm test
 npm run check
+npm run smoke
 ```
 
 测试不需要真实 QQ 凭据或 MySQL 服务。需要实际运行机器人时，复制 `.env.example` 为 `.env` 并按 README 填写配置。
+
+依赖管理测试多数 mock npm，另有离线真实 npm 集成测试，只安装临时本地包并执行无害安装脚本，不访问公网。smoke 使用真实 SQLite/Web 与模拟 QQ 事件。项目是直接运行的 CommonJS JavaScript，目前没有独立 lint、typecheck 或 build 脚本，`check` 是语法检查。
+
+插件自己的依赖应在插件目录内安装，不加入框架根清单；提交插件清单和锁文件，忽略 node_modules 和 `.qbotrix-dependencies.json`。详见 [独立依赖开发规范](./docs/plugin-dependencies.md)。
 
 ## 提交变更
 

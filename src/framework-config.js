@@ -9,6 +9,7 @@ const { normalizeHttpUrl } = require('./temporary-image-host')
 
 const DEFAULT_FRAMEWORK_CONFIG = Object.freeze({
   pluginDirectory: 'plugins',
+  plugins: Object.freeze({ autoInstallDependencies: true }),
   logLevel: 'info',
   webHost: '127.0.0.1',
   webPort: 3000,
@@ -20,6 +21,11 @@ const DEFAULT_FRAMEWORK_CONFIG = Object.freeze({
 })
 
 function normalizeFrameworkConfig(input = {}) {
+  if (input.plugins !== undefined && (!input.plugins || typeof input.plugins !== 'object' || Array.isArray(input.plugins))) {
+    throw new TypeError('plugins 配置必须是对象')
+  }
+  const autoInstallDependencies = input.plugins?.autoInstallDependencies ?? true
+  if (typeof autoInstallDependencies !== 'boolean') throw new TypeError('plugins.autoInstallDependencies 必须是布尔值')
   const webPort = Number(input.webPort ?? DEFAULT_FRAMEWORK_CONFIG.webPort)
   if (!Number.isInteger(webPort) || webPort < 0 || webPort > 65535) {
     throw new TypeError('Web 管理端口必须是 0 到 65535 之间的整数')
@@ -32,6 +38,7 @@ function normalizeFrameworkConfig(input = {}) {
   }
   return {
     pluginDirectory: String(input.pluginDirectory || DEFAULT_FRAMEWORK_CONFIG.pluginDirectory).trim(),
+    plugins: { autoInstallDependencies },
     logLevel: String(input.logLevel || DEFAULT_FRAMEWORK_CONFIG.logLevel).trim(),
     webHost: String(input.webHost || DEFAULT_FRAMEWORK_CONFIG.webHost).trim(),
     webPort,
@@ -62,7 +69,7 @@ class FrameworkConfigStore {
   }
 
   get() {
-    return { ...this.value }
+    return { ...this.value, plugins: { ...this.value.plugins } }
   }
 
   async update(patch) {

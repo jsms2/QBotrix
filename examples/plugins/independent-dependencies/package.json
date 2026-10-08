@@ -1,0 +1,11 @@
+{
+  "name": "qbotrix-plugin-independent-dependencies-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "dayjs": "1.11.18"
+  }
+}

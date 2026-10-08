@@ -224,6 +224,8 @@ class WebAdminServer {
       const form = await readForm(request)
       await this.configStore.update({
         pluginDirectory: form.get('pluginDirectory'),
+        plugins: { autoInstallDependencies: form.has('autoInstallDependencies')
+          ? form.get('autoInstallDependencies') === 'true' : this.configStore.get().plugins?.autoInstallDependencies ?? true },
         logLevel: form.get('logLevel'),
         webHost: form.get('webHost'),
         webPort: form.get('webPort'),
@@ -265,6 +267,7 @@ class WebAdminServer {
 <form class="row" method="post" action="/plugins/load"><input name="path" placeholder="插件路径" required><button>加载插件</button></form></section>
 <section class="card"><h2>主框架配置</h2><p class="muted">保存后将在下次启动时完整生效；敏感凭据不会在网页中显示或保存。</p><form method="post" action="/config"><div class="grid">
 <label>插件目录<br><input name="pluginDirectory" value="${escapeHtml(config.pluginDirectory)}" required></label>
+<label>自动安装插件 npm 依赖<br><select name="autoInstallDependencies"><option value="true"${config.plugins?.autoInstallDependencies !== false ? ' selected' : ''}>开启（仅加载可信插件）</option><option value="false"${config.plugins?.autoInstallDependencies === false ? ' selected' : ''}>关闭（手动安装）</option></select></label>
 <label>日志级别<br><input name="logLevel" value="${escapeHtml(config.logLevel)}" required></label>
 <label>管理监听地址<br><input name="webHost" value="${escapeHtml(config.webHost)}" required></label>
 <label>管理端口<br><input name="webPort" type="number" min="0" max="65535" value="${config.webPort}" required></label>

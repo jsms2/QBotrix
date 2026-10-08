@@ -14,7 +14,7 @@ const files = []
 function collect(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const absolutePath = path.join(directory, entry.name)
-    if (entry.isDirectory()) collect(absolutePath)
+    if (entry.isDirectory() && !['node_modules', '.git', 'data', 'storage'].includes(entry.name)) collect(absolutePath)
     else if (/\.(?:[cm]?js)$/iu.test(entry.name)) files.push(absolutePath)
   }
 }

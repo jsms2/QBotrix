@@ -9,6 +9,7 @@ QBotrix 是面向 QQ 官方机器人单聊与群聊的 Node.js 插件框架，�
 项目不预装业务插件，`plugins` 目录仅保留 `.gitkeep`。框架不订阅、也不处理频道消息，支持：
 
 - 插件加载、卸载、重载；
+- 插件独立 npm 依赖检测、按需安装和更新，依赖失败不影响其他插件；
 - 单聊（`c2c`）和群聊（`group`）命令；
 - 群 @ 机器人命令、单聊命令的 `/命令 参数`、`命令 参数` 双格式路由；
 - 群聊全量消息和单聊消息插件回调；
@@ -70,9 +71,34 @@ QQBOT_MYSQL_DATABASE=机器人数据库名
 
 机器人订阅 `GROUP_AND_C2C_EVENT`、`GROUP_MEMBER` 和 `INTERACTION`。群聊全量消息、群成员变更和按钮互动还需要机器人账号已获得平台对应权限；没有相应权限时，其他已授权事件仍可正常工作。
 
+## 插件独立 npm 依赖
+
+插件可以携带自己的 `package.json`、`package-lock.json` 和 `node_modules`。框架在加载前检查 SHA-256 状态和依赖完整性，只有首次安装、清单/锁文件变化、安装失败或明显缺包等情况才执行 npm；不会每次启动都安装，也不会修改框架根依赖。没有清单或运行依赖的旧插件保持原行为。
+
+```text
+plugins/example-plugin/
+├─ index.js
+├─ package.json
+└─ package-lock.json
+```
+
+有锁文件使用 `npm ci --omit=dev`，没有锁文件使用 `npm install --omit=dev`，工作目录均为插件目录。开发时 `npm install 包名` 也应在该目录执行。每个插件维护自己的版本；删除整个插件目录时依赖一同删除。
+
+自动安装默认开启。可以在 Web 管理页面关闭，或在现有 `data/framework-config.json` 设置以下配置，重启后生效：
+
+```json
+{
+  "plugins": { "autoInstallDependencies": false }
+}
+```
+
+关闭后缺少依赖的插件会被跳过，日志给出手动安装命令，其他插件继续加载。自动安装**允许执行第三方 npm 安装脚本**，不会默认加 `--ignore-scripts`；只应安装可信来源的插件。
+
+完整配置、状态存储、更新流程、安全边界及排错见 [插件依赖管理](./docs/plugin-dependencies.md)，可运行的 CommonJS/ESM 示例见 [独立依赖示例](./examples/plugins/independent-dependencies/README.md)。示例位于 examples，不预装到 plugins。
+
 ## 插件格式
 
-默认自动加载 `plugins` 目录内的 `.js`、`.cjs` 文件和 Node.js 包目录。插件使用 CommonJS：
+默认自动加载 `plugins` 目录内的 `.js`、`.cjs`、`.mjs` 文件和 Node.js 包目录。插件支持 CommonJS 和 ESM default 导出；以下示例使用 CommonJS：
 
 ```js
 module.exports = {
@@ -258,9 +284,10 @@ help
 ```bash
 npm test
 npm run check
+npm run smoke
 ```
 
-自动检查在 Linux 和 Windows 上使用 Node.js 22、24 运行上述命令，不需要 QQ 凭据或真实数据库服务。
+自动检查在 Linux 和 Windows 上使用 Node.js 22、24 运行上述命令，不需要 QQ 凭据或真实 MySQL 服务。依赖集成测试使用离线本地 npm 包；smoke 启动真实 SQLite/Web 服务，以模拟 QQ 事件验证框架生命周期，不连接 QQ 平台。
 
 ## 参与项目
 

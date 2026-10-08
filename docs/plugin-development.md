@@ -1,8 +1,8 @@
 # QQ 官方机器人框架插件开发文档
 
-本文对应本仓库当前实现，更新日期：2026-10-04。框架运行于 Node.js 22.13 或更高版本，插件采用 CommonJS；QQ 传输层为 `qq-official-bot`。文中的命令卡片、数据库、网页工具均以实际源码为准。
+本文对应本仓库当前实现，更新日期：2026-10-08。框架运行于 Node.js 22.13 或更高版本，插件支持 CommonJS 和 ESM default 导出；QQ 传输层为 `qq-official-bot`。文中的命令卡片、数据库、网页工具均以实际源码为准。
 
-本发行版不预装任何业务插件，`plugins` 目录为空。本文插件名称仅用于开发说明和代码示例，创建相应文件后才会加载。
+本发行版不预装业务插件，`plugins` 仅保留 `.gitkeep`。本文示例需自行创建；独立依赖的可运行示例在 examples 中，不自动加载。
 
 ## 目录
 
@@ -28,6 +28,8 @@
 
 框架负责连接机器人、分发事件、匹配命令、同步 QQ 指令卡片、提供受限数据库对象、上传图片、审计命令和消息回复，以及为管理页面提供鉴权和路由。插件负责业务判断、业务数据表、配置页面、配置验证和最终 Markdown 内容。
 
+框架还在加载插件前检查并按需安装插件的独立 npm 依赖。完整架构、配置与排错见 [插件依赖管理](./plugin-dependencies.md)。
+
 本框架支持 QQ 群聊和单聊，不提供频道业务接口。QQ 平台权限决定机器人实际能收到哪些事件；“全量群消息”指平台已经投递到机器人的群消息。
 
 推荐目录布局：
@@ -36,6 +38,10 @@
 plugins/
   my-plugin/
     index.js             插件入口：注册命令、事件和页面
+    package.json         可选，声明本插件的 npm 依赖
+    package-lock.json    推荐提交，锁定本插件依赖
+    node_modules/        自动安装，禁止提交
+    .qbotrix-dependencies.json  框架依赖状态，禁止提交
     store.js             数据库操作
     service.js           业务处理或外部接口访问
     web.js               管理页面路由
@@ -46,7 +52,7 @@ plugins/
   _lib/                  可选的插件共用业务工具
 ```
 
-默认自动加载 `plugins` 直接子项中的 `.js`、`.cjs` 文件和目录，名称以 `.` 或 `_` 开头的子项会跳过。因此，将辅助脚本放在自己的插件目录内，或放在 `_lib` 中；不要将普通工具模块直接放在 `plugins` 顶层。目录插件应提供 `index.js`，或配置 Node.js 可以解析的包入口。
+默认自动加载 `plugins` 直接子项中的 `.js`、`.cjs`、`.mjs` 文件和目录，名称以 `.` 或 `_` 开头的子项以及 node_modules 会跳过。因此，将辅助脚本放在自己的插件目录内，或放在 `_lib` 中；不要将普通工具模块直接放在 `plugins` 顶层。目录插件应提供 `index.js/index.cjs/index.mjs`，或在 package.json 配置 main 入口。
 
 **插件的持久化配置、缓存、静态数据和业务记录只能存放在 `plugins` 内或框架数据库中。不得把插件配置添加到根目录 `.env`、`.env.example` 或 `data/framework-config.json`，也不得在根目录 `data` 中创建插件 JSON 文件。** 根目录 `.env` 保留框架配置，例如机器人凭据、数据库连接、管理令牌和公共图床服务配置。
 
@@ -59,7 +65,7 @@ plugins/
 在仓库根目录执行：
 
 ```powershell
-npm install
+npm ci
 Copy-Item .env.example .env
 ```
 
@@ -107,6 +113,25 @@ load plugins/greeting
 
 在单聊或群聊发送 `问候`、`/问候`、`问候 张三` 均可触发。命令能否显示在 QQ 卡片中由全局名额决定；即使未显示，也可直接发送消息调用。
 
+### 2.3 为示例插件添加独立依赖
+
+原问候示例无需清单即可继续工作。需要第三方包时，可以为 greeting 添加自己的清单和锁文件：
+
+```text
+plugins/greeting/
+├─ index.js
+├─ package.json
+└─ package-lock.json
+```
+
+在 greeting 目录执行 `npm install dayjs`（不是框架根目录），并设置清单 `private: true`。运行时包放在 dependencies，测试和编译工具放在 devDependencies。框架生产安装使用 `--omit=dev`，插件不应重复依赖 QBotrix 框架本体。
+
+CommonJS 的 greeting/index.js 可以添加 `const dayjs = require('dayjs')`，用 `dayjs().format('YYYY-MM-DD')` 生成问候日期。若改为 ESM，在清单设置 `type: module`，入口使用 `import dayjs from 'dayjs'` 和 `export default { name, setup }`。入口导出格式和上下文 API 不变。
+
+完整可运行的日期插件（含清单、锁文件及两种入口）见 [示例说明](../examples/plugins/independent-dependencies/README.md)。框架按需安装到本插件 node_modules，并用本插件 `.qbotrix-dependencies.json` 记录清单/锁文件 hash。没有变化且安装完整时不运行 npm。首次无锁安装生成锁文件后，框架记录新的 hash。
+
+清单或锁文件更新后，下一次 load/reload 自动更新依赖。依赖安装失败时入口不执行，目录扫描跳过该插件并继续其他插件；单独 load/reload 返回错误。关闭 `plugins.autoInstallDependencies` 后需手动安装，详见 [统一配置与失败处理](./plugin-dependencies.md)。安装可执行第三方 preinstall/install/postinstall 脚本，只应安装可信来源的插件。
+
 ## 3. 生命周期与资源清理
 
 ### 3.1 导出格式
@@ -119,7 +144,7 @@ load plugins/greeting
 
 一次加载会执行以下步骤：
 
-1. 解析插件入口并清理相关 CommonJS 缓存。
+1. 读取插件元数据、检查独立依赖状态，必要时在插件目录安装依赖；依赖成功后解析入口并清理相关 CommonJS 缓存（ESM 以新代次 URL 导入入口）。
 2. 创建插件专属上下文。
 3. 等待 `setup` 完成，收集命令、事件处理器和网页注册。
 4. 验证命令名称冲突，将插件纳入运行中的注册列表。
@@ -739,7 +764,9 @@ console 只在交互式 TTY 且 `QQBOT_CONSOLE` 不为 `0` 时启用。load 使�
 
 ### 14.2 热重载的边界
 
-重载清理插件入口及其目录内相关依赖缓存，但不清理 node_modules，也不能保证清理目录外的共用模块缓存。修改插件内模块后重载；修改主框架、共享依赖或 SDK 后重启整个进程。
+重载先重新检查依赖。依赖未变时复用 node_modules；依赖重装后清理该插件目录内的 CommonJS 依赖缓存，重新加载新版本，不清理其他插件的独立依赖。卸载不删除依赖；删除整个插件目录无需清理框架根依赖。
+
+ESM 入口以新代次 URL 重新执行，入口引用的 ESM 子模块仍受 Node 缓存限制；修改 ESM 子模块/依赖或模块类型时应重启进程。目录外的共享模块、主框架或 SDK 变化也应重启。未结束的业务调用可能仍引用旧代码，清理函数须自行协调。
 
 浏览器静态资源更新后重新加载页面。文件系统模块重载与浏览器缓存是两个不同环节，不要只重载后端插件就认为已有浏览器页面会自动更新。
 
@@ -797,11 +824,15 @@ npm run check
 
 现有参考测试：`test/plugin-manager.test.js`、`test/command-panel-selection.test.js`、`test/command-panel-sync.test.js`、`test/framework-events.test.js`、`test/sqlite.test.js` 和 `test/web-admin.test.js`。发行版只保留框架测试，测试中临时创建的插件仅用于验证加载、上下文和生命周期，不会安装到发行版的 plugins 目录。
 
+独立依赖测试见 `test/plugin-dependencies.test.js` 和 `test/plugin-dependencies.integration.test.js`。前者 mock npm，后者真实安装临时本地包且禁止联网，验证 require/import 都从插件自己的 node_modules 解析。可运行 `npm run smoke` 启动真实框架、SQLite 和 Web 服务，以模拟 QQ 事件验证旧插件、依赖失败隔离及生命周期。
+
 ## 16. 常见问题
 
 | 现象 | 检查和处理 |
 | --- | --- |
 | 插件没有自动加载 | 是否为 plugins 的直接子项；名称是否以 `_` 或 `.` 开头；目录是否有 Node 可解析入口；setup 是否报错 |
+| 插件依赖安装失败或被跳过 | 检查日志中的插件路径和 npm 操作；在该目录手动运行命令，检查 Node/npm、网络、锁文件、磁盘和权限 |
+| 自动安装关闭后插件无法加载 | 在插件目录执行 npm ci --omit=dev（无锁用 npm install --omit=dev），再 load；不要在框架根目录安装 |
 | 插件名意外为 index | 在导出对象上显式填写唯一的 name |
 | 命令冲突但 scopes 不同 | 命令名全局不区分大小写，合并为一个命令注册两种 scopes |
 | 命令能用但卡片没有 | 看 inCommandPanel、onPanelResult.reason 和名额淘汰日志；消息路由独立于卡片 |
@@ -831,6 +862,7 @@ npm run check
 | 内容 | 文件 |
 | --- | --- |
 | 插件导出、上下文、加载与清理 | [src/plugin-manager.js](../src/plugin-manager.js) |
+| 独立 npm 安装、完整性检查与 hash 状态 | [src/plugin-dependencies.js](../src/plugin-dependencies.js) |
 | 命令参数解析及 reply | [src/command-router.js](../src/command-router.js) |
 | 卡片配置验证与 20 个名额筛选 | [src/command-panel-selection.js](../src/command-panel-selection.js) |
 | 官方面板同步及结果回调 | [src/command-panel-sync.js](../src/command-panel-sync.js) |
@@ -853,5 +885,6 @@ npm run check
 6. 管理页转义用户内容，校验保存输入和来源，静态资源采用白名单。
 7. 错误路径、重载、清理和重启恢复经过验证。
 8. 文档和配置示例不包含真实凭据，日志及自动审计内容符合业务预期。
+9. 运行依赖仅声明在本插件清单，提交锁文件；不提交 node_modules 或依赖状态，审核第三方安装脚本。
 
 本文示例是开发参考，不会在写入这份文档时自动创建或加载新插件。实际部署只加入你明确需要的业务插件。

@@ -43,6 +43,7 @@ class QQBotPluginFramework {
       uploadTemporaryImage: this.uploadTemporaryImage,
       mysql: this.mysql,
       auditLog: this.auditLog,
+      autoInstallDependencies: this.configStore.get().plugins?.autoInstallDependencies ?? true,
     })
     this.router = new CommandRouter(this.plugins, this.logger, this.auditLog)
     this.webAdmin = options.webAdmin || null
@@ -57,6 +58,7 @@ class QQBotPluginFramework {
 
   async initialize() {
     const config = await this.configStore.load()
+    this.plugins.configure(config.plugins)
     await this.mysql.initialize()
     this.temporaryImageHost.configure?.(config, this.mysql)
     await this.temporaryImageHost.initialize?.()
